@@ -1,0 +1,8 @@
+
+**** Build of configuration Debug for project blinky ****
+
+"C:\\Users\\thielith\\ti\\ccs1250\\ccs\\utils\\bin\\gmake" -k -j 4 all -O 
+ 
+gmake[1]: 'blinky.out' is up to date.
+
+**** Build Finished ****

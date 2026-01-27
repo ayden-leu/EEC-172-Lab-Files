@@ -1,0 +1,60 @@
+
+**** Build of configuration Debug for project sliding_balling ****
+
+"C:\\Users\\thielith\\ti\\ccs1250\\ccs\\utils\\bin\\gmake" -k -j 4 all -O 
+ 
+Building file: "../Adafruit_OLED.c"
+Invoking: Arm Compiler
+"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --include_path="C:/Users/thielith/Desktop/Shared/class/EEC_172/lab-files/2/files/workspace/sliding_balling" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/inc/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/" --include_path="C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi --preproc_with_compile --preproc_dependency="Adafruit_OLED.d_raw"  "../Adafruit_OLED.c"
+ 
+>> Compilation failure
+subdir_rules.mk:9: recipe for target 'Adafruit_OLED.obj' failed
+gmake: *** No rule to make target 'C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/i2c_if.c', needed by 'i2c_if.obj'.
+gmake: *** No rule to make target 'C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/startup_ccs.c', needed by 'startup_ccs.obj'.
+"../Adafruit_OLED.c", line 5: fatal error #1965: cannot open source file "hw_types.h"
+1 catastrophic error detected in the compilation of "../Adafruit_OLED.c".
+Compilation terminated.
+gmake: *** [Adafruit_OLED.obj] Error 1
+Building file: "../main.c"
+Invoking: Arm Compiler
+"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --include_path="C:/Users/thielith/Desktop/Shared/class/EEC_172/lab-files/2/files/workspace/sliding_balling" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/inc/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/" --include_path="C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi --preproc_with_compile --preproc_dependency="main.d_raw"  "../main.c"
+ 
+>> Compilation failure
+subdir_rules.mk:9: recipe for target 'main.obj' failed
+"../main.c", line 60: fatal error #1965: cannot open source file "hw_types.h"
+1 catastrophic error detected in the compilation of "../main.c".
+Compilation terminated.
+gmake: *** [main.obj] Error 1
+Building file: "../oled_test.c"
+Invoking: Arm Compiler
+"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --include_path="C:/Users/thielith/Desktop/Shared/class/EEC_172/lab-files/2/files/workspace/sliding_balling" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/inc/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/" --include_path="C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi --preproc_with_compile --preproc_dependency="oled_test.d_raw"  "../oled_test.c"
+ 
+>> Compilation failure
+subdir_rules.mk:9: recipe for target 'oled_test.obj' failed
+"../oled_test.c", line 16: fatal error #1965: cannot open source file "i2c_if.h"
+1 catastrophic error detected in the compilation of "../oled_test.c".
+Compilation terminated.
+gmake: *** [oled_test.obj] Error 1
+Building file: "../pinmux.c"
+Invoking: Arm Compiler
+"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --include_path="C:/Users/thielith/Desktop/Shared/class/EEC_172/lab-files/2/files/workspace/sliding_balling" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/inc/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/" --include_path="C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi --preproc_with_compile --preproc_dependency="pinmux.d_raw"  "../pinmux.c"
+ 
+>> Compilation failure
+subdir_rules.mk:9: recipe for target 'pinmux.obj' failed
+"../pinmux.c", line 45: fatal error #1965: cannot open source file "hw_types.h"
+1 catastrophic error detected in the compilation of "../pinmux.c".
+Compilation terminated.
+gmake: *** [pinmux.obj] Error 1
+Building file: "../uart_if.c"
+Invoking: Arm Compiler
+"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --include_path="C:/Users/thielith/Desktop/Shared/class/EEC_172/lab-files/2/files/workspace/sliding_balling" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/inc/" --include_path="C:/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/" --include_path="C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi --preproc_with_compile --preproc_dependency="uart_if.d_raw"  "../uart_if.c"
+ 
+>> Compilation failure
+subdir_rules.mk:9: recipe for target 'uart_if.obj' failed
+"../uart_if.c", line 46: fatal error #1965: cannot open source file "hw_types.h"
+1 catastrophic error detected in the compilation of "../uart_if.c".
+Compilation terminated.
+gmake: *** [uart_if.obj] Error 1
+gmake: Target 'all' not remade because of errors.
+
+**** Build Finished ****

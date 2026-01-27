@@ -1,0 +1,779 @@
+//*****************************************************************************
+//
+// Copyright (C) 2014 Texas Instruments Incorporated - http://www.ti.com/ 
+// 
+// 
+//  Redistribution and use in source and binary forms, with or without 
+//  modification, are permitted provided that the following conditions 
+//  are met:
+//
+//    Redistributions of source code must retain the above copyright 
+//    notice, this list of conditions and the following disclaimer.
+//
+//    Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the 
+//    documentation and/or other materials provided with the   
+//    distribution.
+//
+//    Neither the name of Texas Instruments Incorporated nor the names of
+//    its contributors may be used to endorse or promote products derived
+//    from this software without specific prior written permission.
+//
+//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+//  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+//  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+//  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
+//  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
+//  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+//  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+//  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+//  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+//  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+//  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+//*****************************************************************************
+
+//*****************************************************************************
+//
+// Application Name     - SPI Demo
+// Application Overview - The demo application focuses on showing the required 
+//                        initialization sequence to enable the CC3200 SPI 
+//                        module in full duplex 4-wire master and slave mode(s).
+//
+//*****************************************************************************
+
+
+//*****************************************************************************
+//
+//! \addtogroup SPI_Demo
+//! @{
+//
+//*****************************************************************************
+
+// Standard includes
+#include <string.h>
+
+// Driverlib includes
+#include "hw_types.h"
+#include "hw_memmap.h"
+#include "hw_common_reg.h"
+#include "hw_ints.h"
+#include "spi.h"
+#include "rom.h"
+#include "rom_map.h"
+#include "utils.h"
+#include "prcm.h"
+#include "uart.h"
+#include "interrupt.h"
+
+// Common interface includes
+#include "uart_if.h"
+#include "pin_mux_config.h"
+
+
+
+// new stuff
+#include "Adafruit_SSD1351.h"
+#include "Adafruit_GFX.h"
+#include "oled_test.h"
+#include "gpio.h"
+#include "i2c_if.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
+#define APPLICATION_VERSION     "1.4.0"
+//*****************************************************************************
+//
+// Application Master/Slave mode selector macro
+//
+// MASTER_MODE = 1 : Application in master mode
+// MASTER_MODE = 0 : Application in slave mode
+//
+//*****************************************************************************
+//#define MASTER_MODE      0
+//
+#define SPI_IF_BIT_RATE  100000
+//#define TR_BUFF_SIZE     100
+//
+//#define MASTER_MSG       "This is CC3200 SPI Master Application\n\r"
+//#define SLAVE_MSG        "This is CC3200 SPI Slave Application\n\r"
+
+
+
+// new stuff
+#define INIT_MESSAGE   "Starting OLED screen program...\n\r"
+
+
+// TODO:  remove stuff?
+//*****************************************************************************
+//                      MACRO DEFINITIONS
+//*****************************************************************************
+#define APPLICATION_VERSION     "1.4.0"
+#define APP_NAME                "I2C Demo"
+#define UART_PRINT              Report
+#define FOREVER                 1
+#define CONSOLE                 UARTA0_BASE
+#define FAILURE                 -1
+#define SUCCESS                 0
+#define RETERR_IF_TRUE(condition) {if(condition) return FAILURE;}
+#define RET_IF_ERR(Func)          {int iRetVal = (Func); \
+                                   if (SUCCESS != iRetVal) \
+                                     return  iRetVal;}
+
+#define SPI_IF_BIT_RATE  100000
+#define TR_BUFF_SIZE     100
+
+
+//*****************************************************************************
+//                 GLOBAL VARIABLES -- Start
+//*****************************************************************************
+//static unsigned char g_ucTxBuff[TR_BUFF_SIZE];
+//static unsigned char g_ucRxBuff[TR_BUFF_SIZE];
+//static unsigned char ucTxBuffNdx;
+//static unsigned char ucRxBuffNdx;
+
+#if defined(ccs)
+extern void (* const g_pfnVectors[])(void);
+#endif
+#if defined(ewarm)
+extern uVectorEntry __vector_table;
+#endif
+//*****************************************************************************
+//                 GLOBAL VARIABLES -- End
+//*****************************************************************************
+
+
+
+// new functions
+//  function delays 3*ulCount cycles
+static void delay(unsigned long ulCount){
+    int i;
+    do{
+        ulCount--;
+        for (i=0; i<65535; i++);
+    }while(ulCount);
+}
+
+#define BMA222_ADDR   0x18
+#define REG_ACC_X     0x03
+#define REG_ACC_Y     0x05
+
+#define DEADZONE      4
+#define MAX_STEP_PIXELS   7
+#define FULL_TILT_COUNTS  64
+
+// OLED size
+#define OLED_WIDTH 128 // width
+#define OLED_HEIGHT 128 // height
+
+// Ball properties
+#define BALL_RADIUS  3      // 0 = 1 pixel wide ball, 1 = 3 pixel wide, 2 = 5 pixels, etc.
+#define BALL_COLOR   WHITE
+
+#define ON_FLOOR  0;
+#define JUMPING   1;
+#define FALLING   2;
+
+
+static int ball_x, ball_y, ball_radius;
+static int old_x, old_y, old_radius;
+
+int current_radius = BALL_RADIUS;
+unsigned short ballState = ON_FLOOR;
+
+// helper function
+static int clamp_int(int v, int lo, int hi){
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static void clampBall(int radius){
+    ball_x = clamp_int(ball_x, radius, (OLED_WIDTH  - 1) - radius);
+    ball_y = clamp_int(ball_y, radius, (OLED_HEIGHT - 1) - radius);
+}
+
+
+static void eraseBall(int x, int y, int radius){
+    fillCircle(x, y, radius, BLACK);
+}
+static void drawBall(int x, int y, int radius){
+    fillCircle(x, y, radius, BALL_COLOR);
+}
+
+// Reading accelerometer data
+static signed char bma222_read_s8(unsigned char reg){
+    unsigned char raw = 0;
+    I2C_IF_Write(BMA222_ADDR, &reg, 1, 0);
+    I2C_IF_Read(BMA222_ADDR, &raw, 1);
+    return (signed char)raw;
+}
+
+// Convert tilt to movement speed
+static int accel_to_step(int a){
+    int sign = 1;
+    if (a < 0) { sign = -1; a = -a; }
+
+    if (a <= DEADZONE) return 0;
+
+    a -= DEADZONE;
+
+    if (a > FULL_TILT_COUNTS) a = FULL_TILT_COUNTS;
+
+    int step = 1 + (a * (MAX_STEP_PIXELS - 1)) / FULL_TILT_COUNTS;
+
+    return sign * step;
+}
+
+// Move left or right using X axis
+void ballRoll(void){
+    int ax = (int)bma222_read_s8(REG_ACC_X);
+    int dx = accel_to_step(ax);
+    ball_x -= dx;
+}
+
+// Move up or down using Y axis
+void ballPitch(void){
+    int ay = (int)bma222_read_s8(REG_ACC_Y);
+    int dy = accel_to_step(ay);
+
+    char strin[20];
+    sprintf(strin, "%d", ay);
+    Message(strin);
+
+    ball_y += dy;
+}
+
+void launchBall(void){
+
+}
+
+void handleState(void){
+    switch(ballState){
+        case ON_FLOOR:
+            break;
+        case JUMPING:
+            break;
+        case FALLING:
+            break;
+    }
+}
+
+void initScreen(void){
+    ball_x = OLED_WIDTH / 2;
+    ball_y = OLED_HEIGHT / 2;
+
+    old_x = ball_x;
+    old_y = ball_y;
+
+    // Draw initial ball
+    fillScreen(BLACK);
+    drawBall(ball_x, ball_y, BALL_RADIUS);
+}
+
+void updateBallPosition(void){
+    // Save old position
+    old_x = ball_x;
+    old_y = ball_y;
+
+    // Update position from accelerometer
+    ballRoll();
+    ballPitch();
+    clampBall(BALL_RADIUS);
+
+    // Only redraw if position changed
+    if (ball_x != old_x || ball_y != old_y){
+        eraseBall(old_x, old_y, BALL_RADIUS);
+        drawBall(ball_x, ball_y, BALL_RADIUS);
+    }
+
+    // Max speed
+//    delay(5);
+}
+
+
+static void oledStuff(){
+    Message(INIT_MESSAGE);
+    initScreen();
+
+    while(1){
+//        Message("Hi!");
+//        labupdateBallPosition();
+        updateBallPosition();
+    }
+}
+
+
+
+//*****************************************************************************
+//
+//! Board Initialization & Configuration
+//!
+//! \param  None
+//!
+//! \return None
+//
+//*****************************************************************************
+static void
+BoardInit(void)
+{
+/* In case of TI-RTOS vector table is initialize by OS itself */
+#ifndef USE_TIRTOS
+  //
+  // Set vector table base
+  //
+#if defined(ccs)
+    MAP_IntVTableBaseSet((unsigned long)&g_pfnVectors[0]);
+#endif
+#if defined(ewarm)
+    MAP_IntVTableBaseSet((unsigned long)&__vector_table);
+#endif
+#endif
+    //
+    // Enable Processor
+    //
+    MAP_IntMasterEnable();
+    MAP_IntEnable(FAULT_SYSTICK);
+
+    PRCMCC3200MCUInit();
+}
+
+//*****************************************************************************
+//
+//! Display the buffer contents over I2C
+//!
+//! \param  pucDataBuf is the pointer to the data store to be displayed
+//! \param  ucLen is the length of the data to be displayed
+//!
+//! \return none
+//!
+//*****************************************************************************
+void
+DisplayBuffer(unsigned char *pucDataBuf, unsigned char ucLen)
+{
+    unsigned char ucBufIndx = 0;
+    UART_PRINT("Read contents");
+    UART_PRINT("\n\r");
+    while(ucBufIndx < ucLen)
+    {
+        UART_PRINT(" 0x%x, ", pucDataBuf[ucBufIndx]);
+        ucBufIndx++;
+        if((ucBufIndx % 8) == 0)
+        {
+            UART_PRINT("\n\r");
+        }
+    }
+    UART_PRINT("\n\r");
+}
+
+// TODO:  remove this?
+//****************************************************************************
+//
+//! Parses the read command parameters and invokes the I2C APIs
+//!
+//! \param pcInpString pointer to the user command parameters
+//!
+//! This function
+//!    1. Parses the read command parameters.
+//!    2. Invokes the corresponding I2C APIs
+//!
+//! \return 0: Success, < 0: Failure.
+//
+//****************************************************************************
+int
+ProcessReadCommand(char *pcInpString)
+{
+    unsigned char ucDevAddr, ucLen;
+    unsigned char aucDataBuf[256];
+    char *pcErrPtr;
+    int iRetVal;
+
+    //
+    // Get the device address
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucDevAddr = (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+    //
+    // Get the length of data to be read
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucLen = (unsigned char)strtoul(pcInpString, &pcErrPtr, 10);
+    //RETERR_IF_TRUE(ucLen > sizeof(aucDataBuf));
+
+    //
+    // Read the specified length of data
+    //
+    iRetVal = I2C_IF_Read(ucDevAddr, aucDataBuf, ucLen);
+
+    if(iRetVal == SUCCESS)
+    {
+        UART_PRINT("I2C Read complete\n\r");
+
+        //
+        // Display the buffer over UART on successful write
+        //
+        DisplayBuffer(aucDataBuf, ucLen);
+    }
+    else
+    {
+        UART_PRINT("I2C Read failed\n\r");
+        return FAILURE;
+    }
+
+    return SUCCESS;
+}
+
+// TODO:  remove this and get the important parts?
+//****************************************************************************
+//
+//! Parses the readreg command parameters and invokes the I2C APIs
+//! i2c readreg 0x<dev_addr> 0x<reg_offset> <rdlen>
+//!
+//! \param pcInpString pointer to the readreg command parameters
+//!
+//! This function
+//!    1. Parses the readreg command parameters.
+//!    2. Invokes the corresponding I2C APIs
+//!
+//! \return 0: Success, < 0: Failure.
+//
+//****************************************************************************
+int
+ProcessReadRegCommand(char *pcInpString)
+{
+    unsigned char ucDevAddr, ucRegOffset, ucRdLen;
+    unsigned char aucRdDataBuf[256];
+    char *pcErrPtr;
+
+    //
+    // Get the device address
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucDevAddr = (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+    //
+    // Get the register offset address
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucRegOffset = (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+
+    //
+    // Get the length of data to be read
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucRdLen = (unsigned char)strtoul(pcInpString, &pcErrPtr, 10);
+    //RETERR_IF_TRUE(ucLen > sizeof(aucDataBuf));
+
+    //
+    // Write the register address to be read from.
+    // Stop bit implicitly assumed to be 0.
+    //
+    RET_IF_ERR(I2C_IF_Write(ucDevAddr,&ucRegOffset,1,0));
+
+    //
+    // Read the specified length of data
+    //
+    RET_IF_ERR(I2C_IF_Read(ucDevAddr, &aucRdDataBuf[0], ucRdLen));
+
+    UART_PRINT("I2C Read From address complete\n\r");
+
+    //
+    // Display the buffer over UART on successful readreg
+    //
+    DisplayBuffer(aucRdDataBuf, ucRdLen);
+
+    return SUCCESS;
+}
+
+/// TODO:  remove this?
+//****************************************************************************
+//
+//! Parses the writereg command parameters and invokes the I2C APIs
+//! i2c writereg 0x<dev_addr> 0x<reg_offset> <wrlen> <0x<byte0> [0x<byte1> ...]>
+//!
+//! \param pcInpString pointer to the readreg command parameters
+//!
+//! This function
+//!    1. Parses the writereg command parameters.
+//!    2. Invokes the corresponding I2C APIs
+//!
+//! \return 0: Success, < 0: Failure.
+//
+//****************************************************************************
+int
+ProcessWriteRegCommand(char *pcInpString)
+{
+    unsigned char ucDevAddr, ucRegOffset, ucWrLen;
+    unsigned char aucDataBuf[256];
+    char *pcErrPtr;
+    int iLoopCnt = 0;
+
+    //
+    // Get the device address
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucDevAddr = (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+
+    //
+    // Get the register offset to be written
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucRegOffset = (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+    aucDataBuf[iLoopCnt] = ucRegOffset;
+    iLoopCnt++;
+
+    //
+    // Get the length of data to be written
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucWrLen = (unsigned char)strtoul(pcInpString, &pcErrPtr, 10);
+    //RETERR_IF_TRUE(ucWrLen > sizeof(aucDataBuf));
+
+    //
+    // Get the bytes to be written
+    //
+    for(; iLoopCnt < ucWrLen + 1; iLoopCnt++)
+    {
+        //
+        // Store the data to be written
+        //
+        pcInpString = strtok(NULL, " ");
+        RETERR_IF_TRUE(pcInpString == NULL);
+        aucDataBuf[iLoopCnt] =
+                (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+    }
+    //
+    // Write the data values.
+    //
+    RET_IF_ERR(I2C_IF_Write(ucDevAddr,&aucDataBuf[0],ucWrLen+1,1));
+
+    UART_PRINT("I2C Write To address complete\n\r");
+
+    return SUCCESS;
+}
+
+// TODO:  remove this?
+//****************************************************************************
+//
+//! Parses the write command parameters and invokes the I2C APIs
+//!
+//! \param pcInpString pointer to the write command parameters
+//!
+//! This function
+//!    1. Parses the write command parameters.
+//!    2. Invokes the corresponding I2C APIs
+//!
+//! \return 0: Success, < 0: Failure.
+//
+//****************************************************************************
+int
+ProcessWriteCommand(char *pcInpString)
+{
+    unsigned char ucDevAddr, ucStopBit, ucLen;
+    unsigned char aucDataBuf[256];
+    char *pcErrPtr;
+    int iRetVal, iLoopCnt;
+
+    //
+    // Get the device address
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucDevAddr = (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+
+    //
+    // Get the length of data to be written
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucLen = (unsigned char)strtoul(pcInpString, &pcErrPtr, 10);
+    //RETERR_IF_TRUE(ucLen > sizeof(aucDataBuf));
+
+    for(iLoopCnt = 0; iLoopCnt < ucLen; iLoopCnt++)
+    {
+        //
+        // Store the data to be written
+        //
+        pcInpString = strtok(NULL, " ");
+        RETERR_IF_TRUE(pcInpString == NULL);
+        aucDataBuf[iLoopCnt] =
+                (unsigned char)strtoul(pcInpString+2, &pcErrPtr, 16);
+    }
+
+    //
+    // Get the stop bit
+    //
+    pcInpString = strtok(NULL, " ");
+    RETERR_IF_TRUE(pcInpString == NULL);
+    ucStopBit = (unsigned char)strtoul(pcInpString, &pcErrPtr, 10);
+
+    //
+    // Write the data to the specified address
+    //
+    iRetVal = I2C_IF_Write(ucDevAddr, aucDataBuf, ucLen, ucStopBit);
+    if(iRetVal == SUCCESS)
+    {
+        UART_PRINT("I2C Write complete\n\r");
+    }
+    else
+    {
+        UART_PRINT("I2C Write failed\n\r");
+        return FAILURE;
+    }
+
+    return SUCCESS;
+}
+
+// TODO:  remove this?
+//****************************************************************************
+//
+//! Parses the user input command and invokes the I2C APIs
+//!
+//! \param pcCmdBuffer pointer to the user command
+//!
+//! This function
+//!    1. Parses the user command.
+//!    2. Invokes the corresponding I2C APIs
+//!
+//! \return 0: Success, < 0: Failure.
+//
+//****************************************************************************
+int
+ParseNProcessCmd(char *pcCmdBuffer)
+{
+    char *pcInpString;
+    int iRetVal = FAILURE;
+
+    pcInpString = strtok(pcCmdBuffer, " \n\r");
+    if(pcInpString != NULL)
+
+    {
+
+        if(!strcmp(pcInpString, "read"))
+        {
+            //
+            // Invoke the read command handler
+            //
+            iRetVal = ProcessReadCommand(pcInpString);
+        }
+        else if(!strcmp(pcInpString, "readreg"))
+        {
+            //
+            // Invoke the readreg command handler
+            //
+            iRetVal = ProcessReadRegCommand(pcInpString);
+        }
+        else if(!strcmp(pcInpString, "writereg"))
+        {
+            //
+            // Invoke the writereg command handler
+            //
+            iRetVal = ProcessWriteRegCommand(pcInpString);
+        }
+        else if(!strcmp(pcInpString, "write"))
+        {
+            //
+            // Invoke the write command handler
+            //
+            iRetVal = ProcessWriteCommand(pcInpString);
+        }
+        else
+        {
+            UART_PRINT("Unsupported command\n\r");
+            return FAILURE;
+        }
+    }
+
+    return iRetVal;
+}
+
+
+
+//*****************************************************************************
+//
+//! Main function for spi demo application
+//!
+//! \param none
+//!
+//! \return None.
+//
+//*****************************************************************************
+void main()
+{
+    //
+    // Initialize Board configurations
+    //
+    BoardInit();
+
+    //
+    // Muxing UART and SPI lines.
+    //
+    PinMuxConfig();
+
+    //
+    // Enable the SPI module clock
+    //
+    MAP_PRCMPeripheralClkEnable(PRCM_GSPI, PRCM_RUN_MODE_CLK);
+
+    //
+    // Initialising the Terminal.
+    //
+//    InitTerm();
+
+    //
+    // Clearing the Terminal.
+    //
+//    ClearTerm();
+
+    // new stuff
+    Message("Resetting peripheral PRCM...\n\r");
+    MAP_PRCMPeripheralReset(PRCM_GSPI);
+
+    Message("Initializing I2C...\n\r");
+    I2C_IF_Open(I2C_MASTER_MODE_FST);
+
+    Message("Resetting SPI...\n\r");
+    MAP_SPIReset(GSPI_BASE);
+
+    Message("Configuring SPI interface...\n\r");
+    MAP_SPIConfigSetExpClk(GSPI_BASE,MAP_PRCMPeripheralClockGet(PRCM_GSPI),
+                            SPI_IF_BIT_RATE,SPI_MODE_MASTER,SPI_SUB_MODE_0,
+                             (SPI_SW_CTRL_CS |
+                             SPI_4PIN_MODE |
+                             SPI_TURBO_OFF |
+                             SPI_CS_ACTIVEHIGH |
+                             SPI_WL_8));
+
+    Message("Enabling SPI...\n\r");
+    MAP_SPIEnable(GSPI_BASE);
+
+    Message("Initializing Adafruit...\n\r");
+    Adafruit_Init();
+
+
+    //
+    // Display the Banner
+    //
+    Message("\n\n\n\r");
+    Message("\t\t   ********************************************\n\r");
+    Message("\t\t        CC3200 SPI Demo Application  \n\r");
+    Message("\t\t   ********************************************\n\r");
+    Message("\n\n\n\r");
+
+    //
+    // Reset the peripheral
+    //
+//    MAP_PRCMPeripheralReset(PRCM_GSPI);
+
+    oledStuff();
+
+}
+

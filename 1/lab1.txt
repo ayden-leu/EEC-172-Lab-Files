@@ -1,0 +1,28 @@
+use uart_demo for part 2 instead of blinky
+
+
+GPIO_WRITE(port, pin, pin-to-set-value-to)
+    just use the value you would put for pin into the pin-to-set-value-to if you want it high
+
+
+#define RED_LED_BASE      GPIOA1_BASE
+#define RED_LED_PIN       GPIO_PIN_1
+#define YELLOW_LED_BASE     GPIOA1_BASE
+#define YELLOW_LED_PIN      GPIO_PIN_2
+#define GREEN_LED_BASE        GPIOA1_BASE
+#define GREEN_LED_PIN         GPIO_PIN_3
+
+#define SW3_BASE   GPIOA1_BASE
+#define SW3_PIN    GPIO_PIN_5
+#define SW2_BASE   GPIOA2_BASE
+#define SW2_PIN    GPIO_PIN_6
+
+#define P18_BASE   GPIOA3_BASE
+#define P18_PIN    GPIO_PIN_4
+
+#define MODE_IDLE          0
+#define MODE_LED_BINARY    1
+#define MODE_LED_BLINK     2
+
+#define RED_LED     0
+#define YELLOW_LED  0
