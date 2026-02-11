@@ -395,16 +395,6 @@ void main()
     //
     MAP_PRCMPeripheralClkEnable(PRCM_GSPI, PRCM_RUN_MODE_CLK);
 
-    //
-    // Initialising the Terminal.
-    //
-//    InitTerm();
-
-    //
-    // Clearing the Terminal.
-    //
-//    ClearTerm();
-
     // new stuff
     Message("Resetting peripheral PRCM...\n\r");
     MAP_PRCMPeripheralReset(PRCM_GSPI);

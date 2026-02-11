@@ -177,10 +177,54 @@ volatile int      receivingNewFrame = 0;
 volatile int      allDataReceived = 0;
 
 const unsigned long TICKS_FOR_NEW_FRAME = 30000;  // big gap indicates new frame
-const unsigned long TICKS_BTWN_BITS   = 2000;   // threshold between 0 and 1
+const unsigned long TICKS_BTWN_BITS   = 2000;   // threshold between 0 and 1        US_TO_TICKS()
+
+// leader code:
+//      burst length = 9 ms
+//      pause for 4.5 ms
+//      send data frame
+typedef struct LeaderCode {
+    unsigned long burstLength;
+    unsigned long pauseLength;
+} LeaderCode;
+static const LeaderCode LEADER_CODE = {
+    .burstLength = US_TO_TICKS(1000 * 9),
+    .pauseLength = US_TO_TICKS(1000 * 4.5)
+};
+
+// each bit has a half period burst portion
+//      contains 22 pulses
+//      pulse width = 8.77 micro seconds
+//      period length = 26.3 micro seconds
+// 0 bit:
+//      pulse distance = 1.125 ms
+// 1 bit:
+//      pulse distance = 2.25 ms
+typedef struct BIT {
+    unsigned short pulseNum;
+    unsigned long pulseWidth;
+    unsigned long periodLength;
+    unsigned long pulseDistance;
+} BIT;
+
+static const BIT BIT_0 = {
+    .pulseNum = 22,
+    .pulseWidth = US_TO_TICKS(8.77),
+    .periodLength = US_TO_TICKS(26.3),
+    .pulseDistance = US_TO_TICKS(1000 * 1.125)
+};
+static const BIT BIT_1 = {
+    .pulseNum = 22,
+    .pulseWidth = US_TO_TICKS(8.77),
+    .periodLength = US_TO_TICKS(26.3),
+    .pulseDistance = US_TO_TICKS(1000 * 2.25)
+};
 
 
-static inline unsigned long ticksBetweenSignals(unsigned long prev, unsigned long timeCurrSignal){
+const unsigned long timeBtwnRepeated = US_TO_TICKS(1000 * 88.009);
+
+
+static unsigned long ticksBetweenSignals(unsigned long prev, unsigned long timeCurrSignal){
     // SysTick counts down
     // Mask handles wrap-around for 24-bit counter
     return (prev - timeCurrSignal) & SYSTICK_RELOAD_VAL;
@@ -193,8 +237,7 @@ static void receiverIntHandler(void) {
     // Only handle if our receiver pin got something
     if (! ((ulStatus & RECEIVER.pin) > 0) ) return;
 
-    Message("Receiver received signal.\n\r");
-    return;
+//    Message("Receiver received signal.\n\r");
 
     unsigned long timeCurrSignal = SysTickValueGet();
     unsigned long timeBtwnSignals = ticksBetweenSignals(timeLastSignal, timeCurrSignal);
@@ -202,14 +245,25 @@ static void receiverIntHandler(void) {
 
     prevTimeBtwnSignals = timeBtwnSignals;
 
-    ////
-    receiverData = timeCurrSignal;
-    allDataReceived = 1;
-    return;
-    ////
+
+    // when held, leader code and a single bit are sent repeatedly
+    // address and data bits are sent twice, first normal then inverted, no pause
+
+    // 8 bits are used to identify the device to be controller
+    //      aka the leader code?
+    // 8 more bits are used to send the data
+
+    // example:
+    //      address = 00110111
+    //      data = 00011010
+    //      sent data: (spaces are for visual clarity)
+    //          00110111 11001000 00011010 11100101
+
+    // if special version of NEC code, while button is held:
+    //      pre-burst gets sent every 108 ms
 
     // 1) Detect new frame
-    if (timeBtwnSignals > TICKS_FOR_NEW_FRAME) {
+    if (timeBtwnSignals > LEADER_CODE.pauseLength) {
         receiverData = 0;
         numReceiverDataBits = 0;
         receivingNewFrame = 1;
@@ -219,14 +273,14 @@ static void receiverIntHandler(void) {
     if (!receivingNewFrame) return;
 
     // 2) Convert pulse timing -> bit
-    int bit = (timeBtwnSignals > TICKS_BTWN_BITS) ? 1 : 0;
+    int bit = (timeBtwnSignals > BIT_0.periodLength) ? 1 : 0;
 
     // 3) Shift into code
     receiverData = (receiverData << 1) | (unsigned long)bit;
     numReceiverDataBits++;
 
-    // 4) If complete (commonly 32 bits)
-    if (numReceiverDataBits >= 32) {
+    // 4) If complete.  using 16 bits because an inverted copy is sent after
+    if (numReceiverDataBits >= 16) {
         allDataReceived = 1;        // tell main loop to print/interpret
         receivingNewFrame = 0;
     }
@@ -275,6 +329,22 @@ static void initializeReceiverInterrupt(void)
     Message("Initialized receiver interrupt.\n\r");
 }
 
+
+static void printIntInBits(unsigned short num){ // 16 bits long, assume right-most 8 bits hold wanted data
+    unsigned short bit1 = (receiverData & 0x0000000010000000) >> 7;
+    unsigned short bit2 = (receiverData & 0x0000000001000000) >> 6;
+    unsigned short bit3 = (receiverData & 0x0000000000100000) >> 5;
+    unsigned short bit4 = (receiverData & 0x0000000000010000) >> 4;
+    unsigned short bit5 = (receiverData & 0x0000000000001000) >> 3;
+    unsigned short bit6 = (receiverData & 0x0000000000000100) >> 2;
+    unsigned short bit7 = (receiverData & 0x0000000000000010) >> 1;
+    unsigned short bit8 = (receiverData & 0x0000000000000001);
+
+    Report("Got: %d %d %d %d %d %d %d %d\n\r",
+           bit1, bit2, bit3, bit4, bit5, bit6, bit7, bit8
+    );
+    Report("-------\n\r");
+}
 
 //*****************************************************************************
 //
@@ -337,7 +407,7 @@ int main(void){
     ClearTerm();
 
     // initialize interrupts
-//    initializeSysTickCounter();
+    initializeSysTickCounter();
     initializeReceiverInterrupt();
 
     timeLastSignal = SysTickValueGet();
@@ -348,10 +418,10 @@ int main(void){
     Message("\t\t****************************************************\n\r");
     Message("\n\n\n\r");
 
-    Report("receiver data:\n\r");
-    Report("receiver base: %d\n\r", RECEIVER.base);
-    Report("receiver interrupt: %d\n\r", RECEIVER.baseInterrupt);
-    Report("receiver pin: %d\n\r", RECEIVER.pin);
+//    Report("receiver data:\n\r");
+//    Report("\treceiver base: %d\n\r", RECEIVER.base);
+//    Report("\treceiver interrupt: %d\n\r", RECEIVER.baseInterrupt);
+//    Report("\treceiver pin: %d\n\r", RECEIVER.pin);
 
 
     while(FOREVER){
@@ -360,7 +430,13 @@ int main(void){
         if(allDataReceived){
             allDataReceived = 0;
 
-            Report("Got: %d\n\r", receiverData);
+            // length of receiverData is 32 bits
+            unsigned short actualData = (receiverData << 16) >> 16;
+            // length of actualData is 16 bits
+
+            printIntInBits(actualData >> 8);
+            printIntInBits((actualData << (8)) >> 8);
+
         }
     }
 

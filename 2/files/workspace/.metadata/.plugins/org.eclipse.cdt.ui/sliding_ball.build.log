@@ -3,23 +3,6 @@
 
 "C:\\Users\\thielith\\ti\\ccs1250\\ccs\\utils\\bin\\gmake" -k -j 4 all -O 
  
-Building file: "../main.c"
-Invoking: Arm Compiler
-"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --include_path="C:/Users/thielith/Desktop/Shared/class/EEC_172/lab-files/2/files/workspace/sliding_ball" --include_path="C:/Users/thielith/ti/CC3200SDK_1.5.0/cc3200-sdk/" --include_path="C:/Users/thielith/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/" --include_path="C:/Users/thielith/ti/CC3200SDK_1.5.0/cc3200-sdk/inc/" --include_path="C:/Users/thielith/ti/CC3200SDK_1.5.0/cc3200-sdk/example/common/" --include_path="C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi --preproc_with_compile --preproc_dependency="main.d_raw"  "../main.c"
-"../main.c", line 109: warning #179-D: function "delay" was declared but never referenced
-"../main.c", line 145: warning #552-D: variable "old_ax" was set but never used
-"../main.c", line 145: warning #552-D: variable "old_ay" was set but never used
-"../main.c", line 148: warning #552-D: variable "old_accel_x" was set but never used
-"../main.c", line 156: warning #179-D: function "clamp_int" was declared but never referenced
-Finished building: "../main.c"
- 
-Building target: "sliding_ball.out"
-Invoking: Arm Linker
-"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=none -me -Ooff --define=ccs --define=cc3200 -g --diag_warning=225 --diag_wrap=off --display_error_number --abi=eabi -z -m"sliding_ball.map" --heap_size=0x800 --stack_size=0x800 -i"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/lib" -i"C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --reread_libs --diag_wrap=off --display_error_number --warn_sections --xml_link_info="sliding_ball_linkInfo.xml" --rom_model -o "sliding_ball.out" "./Adafruit_GFX.obj" "./Adafruit_OLED.obj" "./i2c_if.obj" "./main.obj" "./oled_test.obj" "./pin_mux_config.obj" "./startup_ccs.obj" "./uart_if.obj" "../cc3200v1p32.cmd"  -l"C:/Users/thielith/ti/CC3200SDK_1.5.0/cc3200-sdk/driverlib/ccs/Release/driverlib.a" -llibc.a 
-<Linking>
-Finished building target: "sliding_ball.out"
- 
-C:/Users/thielith/ti/ccs1250/ccs/utils/tiobj2bin/tiobj2bin sliding_ball.out sliding_ball.bin C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armofd C:/Users/thielith/ti/ccs1250/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armhex C:/Users/thielith/ti/ccs1250/ccs/utils/tiobj2bin/mkhex4bin
- 
+gmake[1]: 'sliding_ball.out' is up to date.
 
 **** Build Finished ****
