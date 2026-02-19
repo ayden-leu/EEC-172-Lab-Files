@@ -170,7 +170,7 @@ int main() {
 
     while (1) {
         // reset the countdown register
-        SysTickReset();
+//        SysTickReset();
 
         // wait for a fixed number of cycles
         // should be 3000 i think (see utils.c)
@@ -184,6 +184,7 @@ int main() {
 
         // print measured time to UART
         Report("cycles = %ull\tus = %ull\n\r", delta, delta_us);
+        Report("SysTick Fire Amount: %d\n\r", systick_cnt);
     }
 }
 

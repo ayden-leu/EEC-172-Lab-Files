@@ -81,6 +81,7 @@
 #include "uart_if.h"
 #include "gpio.h"
 #include "systick.h"
+#include <stdint.h>
 
 
 //*****************************************************************************
@@ -110,7 +111,7 @@
 
 // systick reload value set to 40ms period
 // (PERIOD_SEC) * (SYSCLKFREQ) = PERIOD_TICKS
-#define SYSTICK_RELOAD_VAL 3200000UL
+#define SYSTICK_RELOAD_VAL 0x00FFFFFFUL  // SYSTICK_RELOAD_VAL of 3200000UL too small
 
 
 //*****************************************************************************
@@ -149,7 +150,7 @@ typedef struct PinSetting {
 static const PinSetting RECEIVER = {
     .base = GPIOA3_BASE,
     .baseInterrupt = INT_GPIOA3,
-    .pin = 0x10
+    .pin = GPIO_PIN_4
 };
 
 
@@ -176,21 +177,26 @@ volatile int      numReceiverDataBits = 0;
 volatile int      receivingNewFrame = 0;
 volatile int      allDataReceived = 0;
 
-const unsigned long TICKS_FOR_NEW_FRAME = 30000;  // big gap indicates new frame
-const unsigned long TICKS_BTWN_BITS   = 2000;   // threshold between 0 and 1        US_TO_TICKS()
+//const unsigned long TICKS_FOR_NEW_FRAME = 30000;  // big gap indicates new frame
+//const unsigned long TICKS_BTWN_BITS   = 2000;   // threshold between 0 and 1        US_TO_TICKS()
+
+
+////////////////////////////////
+// according to documentation //
+////////////////////////////////
 
 // leader code:
 //      burst length = 9 ms
 //      pause for 4.5 ms
 //      send data frame
-typedef struct LeaderCode {
-    unsigned long burstLength;
-    unsigned long pauseLength;
-} LeaderCode;
-static const LeaderCode LEADER_CODE = {
-    .burstLength = US_TO_TICKS(1000 * 9),
-    .pauseLength = US_TO_TICKS(1000 * 4.5)
-};
+//typedef struct LeaderCode {
+//    unsigned long burstLength;
+//    unsigned long pauseLength;
+//} LeaderCode;
+//static const LeaderCode LEADER_CODE = {
+//    .burstLength = US_TO_TICKS(1000 * 9),
+//    .pauseLength = US_TO_TICKS(1000 * 4.5)
+//};
 
 // each bit has a half period burst portion
 //      contains 22 pulses
@@ -200,28 +206,34 @@ static const LeaderCode LEADER_CODE = {
 //      pulse distance = 1.125 ms
 // 1 bit:
 //      pulse distance = 2.25 ms
-typedef struct BIT {
-    unsigned short pulseNum;
-    unsigned long pulseWidth;
-    unsigned long periodLength;
-    unsigned long pulseDistance;
-} BIT;
+//typedef struct BIT {
+//    unsigned short pulseNum;
+//    unsigned long pulseWidth;
+//    unsigned long periodLength;
+//    unsigned long pulseDistance;
+//} BIT;
+//
+//static const BIT BIT_0 = {
+//    .pulseNum = 22,
+//    .pulseWidth = US_TO_TICKS(8.77),
+//    .periodLength = US_TO_TICKS(26.3),
+//    .pulseDistance = US_TO_TICKS(1000 * 1.125)
+//};
+//static const BIT BIT_1 = {
+//    .pulseNum = 22,
+//    .pulseWidth = US_TO_TICKS(8.77),
+//    .periodLength = US_TO_TICKS(26.3),
+//    .pulseDistance = US_TO_TICKS(1000 * 2.25)
+//};
 
-static const BIT BIT_0 = {
-    .pulseNum = 22,
-    .pulseWidth = US_TO_TICKS(8.77),
-    .periodLength = US_TO_TICKS(26.3),
-    .pulseDistance = US_TO_TICKS(1000 * 1.125)
-};
-static const BIT BIT_1 = {
-    .pulseNum = 22,
-    .pulseWidth = US_TO_TICKS(8.77),
-    .periodLength = US_TO_TICKS(26.3),
-    .pulseDistance = US_TO_TICKS(1000 * 2.25)
-};
 
+/////////////////////////////////////////////
+// according to data read via saleae logic //
+/////////////////////////////////////////////
+const unsigned long TIME_BTWN_NEW_DATA = US_TO_TICKS(1000 * 87);  // 88 ms
+const unsigned long LENGTH_BIT_0 = US_TO_TICKS(500);              // less than 500 micro seconds
+const unsigned long LENGTH_BIT_1 = US_TO_TICKS(1000);             // less than 1000 micro seconds
 
-const unsigned long timeBtwnRepeated = US_TO_TICKS(1000 * 88.009);
 
 
 static unsigned long ticksBetweenSignals(unsigned long prev, unsigned long timeCurrSignal){
@@ -242,9 +254,10 @@ static void receiverIntHandler(void) {
     unsigned long timeCurrSignal = SysTickValueGet();
     unsigned long timeBtwnSignals = ticksBetweenSignals(timeLastSignal, timeCurrSignal);
     timeLastSignal = timeCurrSignal;
-
     prevTimeBtwnSignals = timeBtwnSignals;
 
+//    Report("timeBtwnSignals: %d\n\r", timeBtwnSignals);
+//    Message("--------\n\r");
 
     // when held, leader code and a single bit are sent repeatedly
     // address and data bits are sent twice, first normal then inverted, no pause
@@ -263,7 +276,7 @@ static void receiverIntHandler(void) {
     //      pre-burst gets sent every 108 ms
 
     // 1) Detect new frame
-    if (timeBtwnSignals > LEADER_CODE.pauseLength) {
+    if (timeBtwnSignals > TIME_BTWN_NEW_DATA) {
         receiverData = 0;
         numReceiverDataBits = 0;
         receivingNewFrame = 1;
@@ -273,7 +286,7 @@ static void receiverIntHandler(void) {
     if (!receivingNewFrame) return;
 
     // 2) Convert pulse timing -> bit
-    int bit = (timeBtwnSignals > BIT_0.periodLength) ? 1 : 0;
+    int bit = (timeBtwnSignals > LENGTH_BIT_0) ? 0 : 1;
 
     // 3) Shift into code
     receiverData = (receiverData << 1) | (unsigned long)bit;
@@ -285,6 +298,33 @@ static void receiverIntHandler(void) {
         receivingNewFrame = 0;
     }
 }
+
+//static void receiverIntHandler(void){
+//    unsigned long receiverBaseStatus = MAP_GPIOIntStatus(RECEIVER.base, true);
+//
+//    MAP_GPIOIntClear(IR_BASE, receiverBaseStatus);   // clear interrupts on the receiver's base
+//    if ((receiverBaseStatus & IR_PIN) == 0) return;  // only continue if the
+//
+//    uint32_t time_current_signal = SysTickValueGet();
+//    uint32_t time_btwn_signals = systick_delta(time_last_signal, time_current_signal);
+//    time_last_signal = time_current_signal;
+//
+//    uint32_t time_btwn_signals_micro = TICKS_TO_US(time_btwn_signals);
+//    prev_time_btwn_signals_micro = time_btwn_signals_micro;
+//
+//    /* If we already latched a frame, ignore edges until main consumes it */
+//    if (should_capture_frame) return;
+//
+//
+//    if (num_receiver_edges < RECEIVER_EDGES_TARGET && num_receiver_edges < RECEIVER_BUFFER_MAX) {
+//        times_btwn_signals_micro[num_receiver_edges] = time_btwn_signals_micro;
+//        num_receiver_edges++;
+//    }
+//
+//    if (num_receiver_edges >= RECEIVER_EDGES_TARGET) {
+//        should_capture_frame = 1;
+//    }
+//}
 
 static void SysTickHandler(void) {
     // increment every time the systick handler fires
@@ -314,36 +354,33 @@ static void initializeReceiverInterrupt(void)
 {
     // Register the receiver interrupt
     MAP_GPIOIntRegister(RECEIVER.base, receiverIntHandler);
-//    MAP_IntPrioritySet(RECEIVER.baseInterrupt, INT_PRIORITY_LVL_0);
+    MAP_IntPrioritySet(RECEIVER.baseInterrupt, INT_PRIORITY_LVL_0);
 
-    // The receiver idles high/is active-low. Start with FALLING edge for simpler timing.
-    MAP_GPIOIntTypeSet(RECEIVER.base, RECEIVER.pin, GPIO_FALLING_EDGE);
+    // The receiver idles high/is active-low.  Interrupt on the rising edge.
+    MAP_GPIOIntTypeSet(RECEIVER.base, RECEIVER.pin, GPIO_FALLING_EDGE);  // GPIO_RISING_EDGE
 
     // clear the interrupt on the receiver base
-    unsigned long ulStatus = MAP_GPIOIntStatus(RECEIVER.base, false);
-    MAP_GPIOIntClear(RECEIVER.base, ulStatus);
+//    unsigned long ulStatus = MAP_GPIOIntStatus(RECEIVER.base, false);
+    MAP_GPIOIntClear(RECEIVER.base, RECEIVER.pin);
 
     // enable the receiver's interrupt
     MAP_GPIOIntEnable(RECEIVER.base, RECEIVER.pin);
+    MAP_IntEnable(RECEIVER.baseInterrupt);
 
     Message("Initialized receiver interrupt.\n\r");
 }
 
 
-static void printIntInBits(unsigned short num){ // 16 bits long, assume right-most 8 bits hold wanted data
-    unsigned short bit1 = (receiverData & 0x0000000010000000) >> 7;
-    unsigned short bit2 = (receiverData & 0x0000000001000000) >> 6;
-    unsigned short bit3 = (receiverData & 0x0000000000100000) >> 5;
-    unsigned short bit4 = (receiverData & 0x0000000000010000) >> 4;
-    unsigned short bit5 = (receiverData & 0x0000000000001000) >> 3;
-    unsigned short bit6 = (receiverData & 0x0000000000000100) >> 2;
-    unsigned short bit7 = (receiverData & 0x0000000000000010) >> 1;
-    unsigned short bit8 = (receiverData & 0x0000000000000001);
-
-    Report("Got: %d %d %d %d %d %d %d %d\n\r",
-           bit1, bit2, bit3, bit4, bit5, bit6, bit7, bit8
-    );
-    Report("-------\n\r");
+static void printIntInBits(unsigned short num, unsigned short numBits){
+    int i;
+    for(i=0; i<numBits; i++){
+        if(num & (1 << (numBits-1 - i))){
+            Message("1");
+        }
+        else{
+            Message("0");
+        }
+    }
 }
 
 //*****************************************************************************
@@ -400,7 +437,7 @@ int main(void){
     PinMuxConfig();
 
     // Register the interrupt handler for the signal
-    MAP_GPIOIntRegister(RECEIVER.base, receiverIntHandler);
+//    MAP_GPIOIntRegister(RECEIVER.base, receiverIntHandler);
 
     // initialize and clear terminal
     InitTerm();
@@ -416,12 +453,22 @@ int main(void){
     Message("\t\t****************************************************\n\r");
     Message("\t\t                            Lab 3\n\r");
     Message("\t\t****************************************************\n\r");
-    Message("\n\n\n\r");
+    Message("\n\r");
+    Message("You can now send signals to the IR receiver by pressing remote buttons 0-9, MUTE, or LAST.\n\r");
 
 //    Report("receiver data:\n\r");
 //    Report("\treceiver base: %d\n\r", RECEIVER.base);
 //    Report("\treceiver interrupt: %d\n\r", RECEIVER.baseInterrupt);
 //    Report("\treceiver pin: %d\n\r", RECEIVER.pin);
+
+    const unsigned long TIME_BTWN_NEW_DATA = US_TO_TICKS(1000 * 87);  // 88 ms
+    const unsigned long LENGTH_BIT_0 = US_TO_TICKS(500);              // less than 500 micro seconds
+    const unsigned long LENGTH_BIT_1 = US_TO_TICKS(1000);             // less than 1000 micro seconds
+
+//    Report("TIME_BTWN_NEW_DATA: %d\n\r", TIME_BTWN_NEW_DATA);
+//    Report("LENGTH_BIT_0: %d\n\r", LENGTH_BIT_0);
+//    Report("LENGTH_BIT_1: %d\n\r", LENGTH_BIT_1);
+//    Report("SYSTICK_RELOAD_VAL: %d\n\r", SYSTICK_RELOAD_VAL);
 
 
     while(FOREVER){
@@ -431,11 +478,22 @@ int main(void){
             allDataReceived = 0;
 
             // length of receiverData is 32 bits
-            unsigned short actualData = (receiverData << 16) >> 16;
-            // length of actualData is 16 bits
+            Report("Receiver data: %d\n\r", receiverData);
+            printIntInBits(receiverData, 32);
+            Message("\n\r---------\n\r");
 
-            printIntInBits(actualData >> 8);
-            printIntInBits((actualData << (8)) >> 8);
+            // length of actualData is 16 bits
+            unsigned short actualData = (receiverData << 16) >> 16;
+            Report("Actual data: %d\n\r", actualData);
+            printIntInBits(actualData, 16);
+            Message("\n\r---------\n\r");
+
+            Message("First Part: ");
+            printIntInBits(actualData >> 8, 8);
+            Message("\n\rSecond Part: ");
+            printIntInBits((actualData << 8) >> 8, 8);
+
+            Message("\n\r===============\n\r\n\r");
 
         }
     }
