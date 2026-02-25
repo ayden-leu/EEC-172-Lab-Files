@@ -479,7 +479,7 @@ static void IRIntInit(void){
     MAP_IntPrioritySet(IR.base_interrupt, INT_PRIORITY_LVL_0);
     MAP_GPIOIntRegister(IR.base, IRIntHandler);
 
-    MAP_GPIOIntTypeSet(IR.base, IR.pin, GPIO_FALLING_EDGE);
+    MAP_GPIOIntTypeSet(IR.base, IR.pin, GPIO_RISING_EDGE);
 
     MAP_GPIOIntClear(IR.base, IR.pin);
     MAP_GPIOIntEnable(IR.base, IR.pin);
@@ -806,7 +806,7 @@ int main(void){
                         break;
                     }
 
-                    send_message();        // sends over UART0 and clears compose
+                    send_message();        // sends over UART1 and clears compose
                     drawMessages();
                     break;
 
