@@ -1,0 +1,415 @@
+//*****************************************************************************
+//
+// Copyright (C) 2014 Texas Instruments Incorporated - http://www.ti.com/ 
+// 
+// 
+//  Redistribution and use in source and binary forms, with or without 
+//  modification, are permitted provided that the following conditions 
+//  are met:
+//
+//    Redistributions of source code must retain the above copyright 
+//    notice, this list of conditions and the following disclaimer.
+//
+//    Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the 
+//    documentation and/or other materials provided with the   
+//    distribution. 
+//
+//    Neither the name of Texas Instruments Incorporated nor the names of
+//    its contributors may be used to endorse or promote products derived
+//    from this software without specific prior written permission.
+//
+//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+//  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+//  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+//  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
+//  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
+//  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+//  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+//  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+//  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+//  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+//  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+//
+//*****************************************************************************
+
+
+//*****************************************************************************
+//
+// Application Name     -   SSL Demo
+// Application Overview -   This is a sample application demonstrating the
+//                          use of secure sockets on a CC3200 device.The
+//                          application connects to an AP and
+//                          tries to establish a secure connection to the
+//                          Google server.
+// Application Details  -
+// docs\examples\CC32xx_SSL_Demo_Application.pdf
+// or
+// http://processors.wiki.ti.com/index.php/CC32xx_SSL_Demo_Application
+//
+//*****************************************************************************
+
+
+//*****************************************************************************
+//
+//! \addtogroup ssl
+//! @{
+//
+//*****************************************************************************
+
+#include <stdio.h>
+#include <string.h>
+
+// Simplelink includes
+#include "simplelink.h"
+
+//Driverlib includes
+#include "hw_types.h"
+#include "hw_ints.h"
+#include "rom.h"
+#include "rom_map.h"
+#include "interrupt.h"
+#include "prcm.h"
+#include "utils.h"
+#include "uart.h"
+
+//Common interface includes
+#include "pinmux.h"
+#include "gpio_if.h"
+#include "common.h"
+#include "uart_if.h"
+
+// Custom includes
+#include "utils/network_utils.h"
+
+
+//NEED TO UPDATE THIS FOR IT TO WORK!
+#define DATE                24    /* Current Date */
+#define MONTH               2     /* Month 1-12 */
+#define YEAR                2026  /* Current year */
+#define HOUR                15    /* Time - hours */
+#define MINUTE              30    /* Time - minutes */
+#define SECOND              0     /* Time - seconds */
+
+
+#define APPLICATION_NAME      "SSL"
+#define APPLICATION_VERSION   "SQ24"
+#define SERVER_NAME           "ate5ycnuivin6-ats.iot.us-east-1.amazonaws.com" // Endpoint name
+#define GOOGLE_DST_PORT       8443
+#define THING_NAME "Ziyi_CC3200_Board" //AWS Things name
+
+#define POSTHEADER "POST /things/" THING_NAME "/shadow HTTP/1.1\r\n"
+#define GETHEADER  "GET /things/"  THING_NAME "/shadow HTTP/1.1\r\n"
+#define HOSTHEADER "Host: " SERVER_NAME "\r\n"
+
+#define CHEADER "Connection: Keep-Alive\r\n"
+#define CTHEADER "Content-Type: application/json; charset=utf-8\r\n"
+#define CLHEADER1 "Content-Length: "
+#define CLHEADER2 "\r\n\r\n"
+
+
+
+
+#define DATA1 "{\r\n" \
+"  \"state\": {\r\n" \
+"    \"desired\": {\r\n" \
+"      \"message\": \"Hello 1\"\r\n" \
+"    }\r\n" \
+"  }\r\n" \
+"}\r\n"
+
+//*****************************************************************************
+//                 GLOBAL VARIABLES -- Start
+//*****************************************************************************
+
+#if defined(ccs) || defined(gcc)
+extern void (* const g_pfnVectors[])(void);
+#endif
+#if defined(ewarm)
+extern uVectorEntry __vector_table;
+#endif
+
+//*****************************************************************************
+//                 GLOBAL VARIABLES -- End: df
+//*****************************************************************************
+
+
+//****************************************************************************
+//                      LOCAL FUNCTION PROTOTYPES
+//****************************************************************************
+static int set_time();
+static void BoardInit(void);
+static void print_status_line(const char *resp);
+static int http_post(int);
+static int http_get(int);
+
+//*****************************************************************************
+//
+//! Board Initialization & Configuration
+//!
+//! \param  None
+//!
+//! \return None
+//
+//*****************************************************************************
+static void BoardInit(void) {
+/* In case of TI-RTOS vector table is initialize by OS itself */
+#ifndef USE_TIRTOS
+  //
+  // Set vector table base
+  //
+#if defined(ccs)
+    MAP_IntVTableBaseSet((unsigned long)&g_pfnVectors[0]);
+#endif
+#if defined(ewarm)
+    MAP_IntVTableBaseSet((unsigned long)&__vector_table);
+#endif
+#endif
+    //
+    // Enable Processor
+    //
+    MAP_IntMasterEnable();
+    MAP_IntEnable(FAULT_SYSTICK);
+
+    PRCMCC3200MCUInit();
+}
+
+
+// Helper function
+static void print_status_line(const char *resp)
+{
+    const char *end = strstr(resp, "\r\n");
+    if (end) {
+        char line[80];
+        int n = (int)(end - resp);
+        if (n > (int)sizeof(line) - 1)
+            n = sizeof(line) - 1;
+
+        memcpy(line, resp, n);
+        line[n] = '\0';
+
+        UART_PRINT("HTTP Status: %s\n\r", line);
+    } else {
+        UART_PRINT("HTTP Status: (could not parse)\n\r");
+    }
+}
+
+//*****************************************************************************
+//
+//! This function updates the date and time of CC3200.
+//!
+//! \param None
+//!
+//! \return
+//!     0 for success, negative otherwise
+//!
+//*****************************************************************************
+
+static int set_time() {
+    long retVal;
+
+    g_time.tm_day = DATE;
+    g_time.tm_mon = MONTH;
+    g_time.tm_year = YEAR;
+    g_time.tm_sec = SECOND;
+    g_time.tm_hour = HOUR;
+    g_time.tm_min = MINUTE;
+
+    retVal = sl_DevSet(SL_DEVICE_GENERAL_CONFIGURATION,
+                          SL_DEVICE_GENERAL_CONFIGURATION_DATE_TIME,
+                          sizeof(SlDateTime),(unsigned char *)(&g_time));
+
+    ASSERT_ON_ERROR(retVal);
+    return SUCCESS;
+}
+
+//*****************************************************************************
+//
+//! Main 
+//!
+//! \param  none
+//!
+//! \return None
+//!
+//*****************************************************************************
+void main() {
+    long lRetVal = -1;
+    //
+    // Initialize board configuration
+    //
+    BoardInit();
+
+    PinMuxConfig();
+
+    InitTerm();
+    ClearTerm();
+    UART_PRINT("My terminal works!\n\r");
+
+    // initialize global default app configuration
+    g_app_config.host = SERVER_NAME;
+    g_app_config.port = GOOGLE_DST_PORT;
+
+    //Connect the CC3200 to the local access point
+    lRetVal = connectToAccessPoint();
+    //Set time so that encryption can be used
+    lRetVal = set_time();
+    if(lRetVal < 0) {
+        UART_PRINT("Unable to set time in the device");
+        LOOP_FOREVER();
+    }
+    //Create TLS connection to AWS endpoint
+    lRetVal = tls_connect();
+    if (lRetVal < 0) {
+        ERR_PRINT(lRetVal);
+        LOOP_FOREVER();   // or return;
+    }
+    //Use the TLS socket to send HTTP over it
+    UART_PRINT("\n\r===== POST shadow update =====\n\r");
+    http_post(lRetVal);
+
+    MAP_UtilsDelay(8000000); // small delay so output is readable (adjust if needed)
+
+    UART_PRINT("\n\r===== GET shadow document =====\n\r");
+    http_get(lRetVal);
+
+    //Stop networking
+    sl_Stop(SL_STOP_TIMEOUT);
+    LOOP_FOREVER();
+
+    UART_PRINT("My terminal works!\n\r");
+
+    UART_PRINT("Checkpoint A: before connectToAccessPoint()\n\r");
+    lRetVal = connectToAccessPoint();
+    UART_PRINT("Checkpoint B: after connectToAccessPoint(), ret=%ld\n\r", lRetVal);
+
+    UART_PRINT("Checkpoint C: before set_time()\n\r");
+    lRetVal = set_time();
+    UART_PRINT("Checkpoint D: after set_time(), ret=%ld\n\r", lRetVal);
+
+    UART_PRINT("Checkpoint E: before tls_connect()\n\r");
+    lRetVal = tls_connect();
+    UART_PRINT("Checkpoint F: after tls_connect(), ret=%ld\n\r", lRetVal);
+
+    UART_PRINT("Checkpoint G: before http_post()\n\r");
+    http_post(lRetVal);
+
+    UART_PRINT("Checkpoint H: before http_get()\n\r");
+    http_get(lRetVal);
+}
+//*****************************************************************************
+//
+// Close the Doxygen group.
+//! @}
+//
+//*****************************************************************************
+
+// builds and sends an HTTP POST message
+static int http_post(int iTLSSockID)
+{
+    char acSendBuff[1024];
+    char acRecvbuff[1460];
+    char cCLLength[16];
+    char *pcBufHeaders = acSendBuff;
+    int lRetVal;
+
+    int dataLength = (int)strlen(DATA1);
+    sprintf(cCLLength, "%d", dataLength);
+
+    //Build the HTTP request
+    strcpy(pcBufHeaders, POSTHEADER);
+    pcBufHeaders += strlen(POSTHEADER);
+
+    strcpy(pcBufHeaders, HOSTHEADER);
+    pcBufHeaders += strlen(HOSTHEADER);
+
+    strcpy(pcBufHeaders, CHEADER);
+    pcBufHeaders += strlen(CHEADER);
+
+    // POST-specific headers
+    strcpy(pcBufHeaders, CTHEADER);
+    pcBufHeaders += strlen(CTHEADER);
+
+    strcpy(pcBufHeaders, CLHEADER1);
+    pcBufHeaders += strlen(CLHEADER1);
+
+    strcpy(pcBufHeaders, cCLLength);
+    pcBufHeaders += strlen(cCLLength);
+
+    strcpy(pcBufHeaders, CLHEADER2);   // "\r\n\r\n"
+    pcBufHeaders += strlen(CLHEADER2);
+
+    // Body
+    strcpy(pcBufHeaders, DATA1);
+    pcBufHeaders += strlen(DATA1);
+
+    // Debug print (safe)
+    UART_PRINT("%s\r\n", acSendBuff);
+
+    // Send
+    lRetVal = sl_Send(iTLSSockID, acSendBuff, (int)strlen(acSendBuff), 0);
+    if (lRetVal < 0) {
+        UART_PRINT("POST failed. Error Number: %d\r\n", lRetVal);
+        sl_Close(iTLSSockID);
+        GPIO_IF_LedOn(MCU_RED_LED_GPIO);
+        return lRetVal;
+    }
+
+    // Receive
+    lRetVal = sl_Recv(iTLSSockID, acRecvbuff, sizeof(acRecvbuff) - 1, 0);
+    if (lRetVal < 0) {
+        UART_PRINT("Receive failed. Error Number: %d\r\n", lRetVal);
+        GPIO_IF_LedOn(MCU_RED_LED_GPIO);
+        return lRetVal;
+    }
+
+    // Null-terminate correctly
+    acRecvbuff[lRetVal] = '\0';
+    print_status_line(acRecvbuff);
+    UART_PRINT("%s\r\n", acRecvbuff);
+
+    return 0;
+}
+
+// builds and sends an HTTP GET message
+static int http_get(int iTLSSockID)
+{
+    char acSendBuff[512];
+    char acRecvbuff[1460];
+    char *pcBufHeaders = acSendBuff;
+    int lRetVal;
+
+    strcpy(pcBufHeaders, GETHEADER);
+    pcBufHeaders += strlen(GETHEADER);
+
+    strcpy(pcBufHeaders, HOSTHEADER);
+    pcBufHeaders += strlen(HOSTHEADER);
+
+    strcpy(pcBufHeaders, CHEADER);
+    pcBufHeaders += strlen(CHEADER);
+
+    // End headers
+    strcpy(pcBufHeaders, "\r\n");
+    pcBufHeaders += 2;
+
+    UART_PRINT("%s\r\n", acSendBuff);
+
+    lRetVal = sl_Send(iTLSSockID, acSendBuff, (int)strlen(acSendBuff), 0);
+    if (lRetVal < 0) {
+        UART_PRINT("GET failed. Error Number: %d\r\n", lRetVal);
+        sl_Close(iTLSSockID);
+        GPIO_IF_LedOn(MCU_RED_LED_GPIO);
+        return lRetVal;
+    }
+
+    lRetVal = sl_Recv(iTLSSockID, acRecvbuff, sizeof(acRecvbuff) - 1, 0);
+    if (lRetVal < 0) {
+        UART_PRINT("Receive failed. Error Number: %d\r\n", lRetVal);
+        GPIO_IF_LedOn(MCU_RED_LED_GPIO);
+        return lRetVal;
+    }
+
+    acRecvbuff[lRetVal] = '\0';
+    print_status_line(acRecvbuff);
+    UART_PRINT("%s\r\n", acRecvbuff);
+    return 0;
+}
